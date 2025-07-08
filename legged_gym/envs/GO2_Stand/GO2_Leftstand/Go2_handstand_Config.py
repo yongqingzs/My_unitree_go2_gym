@@ -145,7 +145,7 @@ class GO2Cfg_Handstand_Command( LeggedRobotCfg ):
 
         randomize_pd_gains = True
         stiffness_multiplier_range = [0.9, 1.1]  
-        damping_multiplier_range = [0.1, 1.1]    
+        damping_multiplier_range = [0.9, 1.1]    
 
 
         randomize_motor_zero_offset = True
@@ -173,12 +173,12 @@ class GO2Cfg_Handstand_Command( LeggedRobotCfg ):
             torques = -0.0001
             dof_vel = -0.
             dof_acc = -1.5e-4
-            base_height = 6.0#0.1 
-            handstand_feet_on_air =  4.0
+            base_height = 3.0#0.1 
+            handstand_feet_on_air =  1.5
             collision = -1.
             feet_stumble = -0.0 
             action_rate = -0.001
-            default_pos =-0.2####
+            default_pos =-0.1####
             default_hip_pos=-0.5
             # contact=0.4
 
@@ -261,7 +261,7 @@ class GO2CfgPPO_Handstand_Command(LeggedRobotCfgPPO):
         lam = 0.95
         desired_kl = 0.01
         max_grad_norm = 1.
-        sym_loss = True
+        sym_loss = False
         obs_permutation = [-0.0001, -1, 2, -3, -4,
                            -5,6,-7,-8,9,-10,
                        -14,15,16,-11,12,13,-20,21,22,-17,18,19,

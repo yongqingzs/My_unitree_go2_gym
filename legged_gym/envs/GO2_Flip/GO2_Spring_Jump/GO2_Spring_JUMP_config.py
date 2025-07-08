@@ -5,9 +5,9 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
         # change the observation dim
         frame_stack = 10 #action stack
         c_frame_stack = 3 #critic 网络的堆叠帧数
-        num_single_obs = 45 #这个是传感器可以获得到的信息
+        num_single_obs = 47 #这个是传感器可以获得到的信息
         num_observations = int(frame_stack * num_single_obs) # 10帧正常的观测
-        single_num_privileged_obs = 64  #不平衡的观测，包含了特权信息，正常传感器获得不到的信息
+        single_num_privileged_obs = 68  #不平衡的观测，包含了特权信息，正常传感器获得不到的信息
         num_privileged_obs = int(c_frame_stack * single_num_privileged_obs) # 3帧特权观测
         num_actions = 12
         num_envs = 4096
@@ -19,12 +19,6 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
         reset_height = 0.13 # [m]
         reset_landing_error = 0.2 # [in m]
 
-        debug_draw = False
-        reset_orientation_error = 0.8 # [rad]
-
-        jumping_target = True
-        known_quaternion = True
-        object_information = True
 
     class terrain:
         mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
@@ -32,8 +26,8 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
         vertical_scale = 0.005 # [m]
         border_size = 25 # [m]
         curriculum = False
-        static_friction = 0.6
-        dynamic_friction = 0.6
+        static_friction = 1.0
+        dynamic_friction = 1.0
         restitution = 0.
         # rough terrain only:
         measure_heights = False
@@ -105,8 +99,8 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'joint': 40.}  # [N*m/rad]
-        damping = {'joint': 1}     # [N*m*s/rad]
+        stiffness = {'joint': 20.}  # [N*m/rad]
+        damping = {'joint': 0.5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
@@ -117,7 +111,6 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
         foot_name = "foot"
         penalize_contacts_on = ["thigh", "calf"]
         terminate_after_contacts_on = ["base"]
-        target_gravity=[0,0,-1]
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         disable_gravity = False
         collapse_fixed_joints = False # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
@@ -154,7 +147,7 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
 
         randomize_pd_gains = True
         stiffness_multiplier_range = [0.9, 1.1]  
-        damping_multiplier_range = [0.1, 1.1]    
+        damping_multiplier_range = [0.9, 1.1]    
 
 
         randomize_motor_zero_offset = True
@@ -173,22 +166,23 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
     class rewards:
         class scales:
             before_setting=0.6
-            post_landing_pos=5.0
-            post_landing_ori=5.0
-            line_z=6.0
+            # post_landing_pos=4.0
+            # post_landing_ori=4.0
+            line_z=10.0
             base_height_flight=4.0
-            base_height_stance=2.0
-            orientation=0.3
+            base_height_stance=1.0
+            orientation=0.4
             default_pose_air=-0.2
             ang_vel_xy=0.2
-            revovery=4.
+            success=1.5
+
             torques=-0.0001
             dof_pos_limits=-1.
             dof_vel_limits=-1.
             torque_limits=-1.
             termination=0.0
             collision=-1.
-            action_rate=-0.005
+            action_rate=-0.01
             action_rate_second_order=-0.0001
             feet_contact_forces=-0.2
 
@@ -196,6 +190,7 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
         only_positive_rewards=False
         reward_sigma=0.25
         target_height=0.6
+        cycle_time=1.0
     class normalization:
         class obs_scales:
             lin_vel = 2.0
@@ -269,11 +264,12 @@ class GO2_Spring_JUMP_PPO_Yu(LeggedRobotCfgPPO):
         desired_kl = 0.01
         max_grad_norm = 1.
         sym_loss = True
-        obs_permutation = [0.0001, -1, 2, 
-                           -3,4,-5,-6,7,-8,
-                       -12,13,14,-9,10,11,-18,19,20,-15,16,17,
-                       -24,25,26,-21,22,23,-30,31,32,-27,28,29,
-                       -36,37,38,-33,34,35,-42,43,44,-39,40,41]
+        obs_permutation = [-0.0001, -1, 2, -3, 4,
+                           -5,6,-7,-8,9,-10,
+                       -14,15,16,-11,12,13,-20,21,22,-17,18,19,
+                       -26,27,28,-23,24,25,-32,33,34,-29,30,31,
+                       -38,39,40,-35,36,37,-44,45,46,-41,42,43]
+        ##command x y height
         act_permutation = [ -3, 4, 5, -0.0001, 1, 2, -9, 10, 11,-6, 7, 8,]#关节电机的对陈关系
         frame_stack = 10
         sym_coef = 1.0

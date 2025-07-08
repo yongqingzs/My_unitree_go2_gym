@@ -23,6 +23,19 @@
 - **Sim2Real**: 将策略部署到实物机器人，实现运动控制。
 
 ## 🛠️ 使用指南
+### 0. 安装依赖
+
+#### Isaacgym 安装
+略
+#### rsl 
+```bash
+cd ./rsl_rl && pip install -e .
+```
+#### legged_gym
+```bash
+cd .. && pip install -e .
+```
+
 
 ### 1. 训练
 
@@ -35,7 +48,7 @@ python legged_gym/scripts/train.py --task=go2_jump --headless
 python legged_gym/scripts/train.py --task=go2_handstand --headless
 ```
 ```bash
-python legged_gym/scripts/train.py --task=go2_handstand_command --headless
+python legged_gym/scripts/train.py --task=go2_trot --headless
 ```
 
 handstand 需要把mirror loss注释掉
@@ -62,7 +75,7 @@ handstand 需要把mirror loss注释掉
 如果想要在 Gym 中查看训练效果，可以运行以下命令：
 
 ```bash
-python legged_gym/scripts/play.py --task=go2_spring_jump
+python legged_gym/scripts/play.py --task=go2_trot
 ```
 
 ```bash
@@ -70,7 +83,7 @@ python legged_gym/scripts/play.py --task=go2_jump
 ```
 
 ```bash
-python legged_gym/scripts/play.py --task=go2_handstand_command
+python legged_gym/scripts/play.py --task=go2_spring_jump
 ```
 **说明**：
 
@@ -90,9 +103,7 @@ Play 会导出 Actor 网络，保存于 `logs/{experiment_name}/exported/policie
 
 #### 示例：运行 Go2 handstand
 
-```bash
-python deploy/deploy_mujoco/deploy_mujoco_48_handstand.py go2.yaml
-```
+
 ```bash
 python deploy/deploy_mujoco/sim2sim_GO2.py --load_model logs/go2_jump/exported/policies/policy_1.pt
 ```
@@ -106,7 +117,7 @@ deploy_mujoco_48_handstand.py go2的handstand版本，没有base_line_vel，状�
 
 sim2sim_GO2.py 改自众擎开源项目的sim2sim，后续都会使用这个
 
-目前只有handstand jump是有效的，其他的还没有做完，我的想法是把其他的项目比方说BACKFLIP，难以阅读的代码整合到legged_gym框架，方便后来者进行学习
+目前只有handstand jump trot是有效的，其他的还没有做完，我的想法是把其他的项目比方说BACKFLIP，难以阅读的代码整合到legged_gym框架，方便后来者进行学习
 # 问题 与后续修改的计划
 
 如何调节抬脚高度（上下楼梯）
@@ -118,6 +129,8 @@ PAKOUR
 BACKFLIP
 
 # 参考文章
+https://arxiv.org/pdf/2205.02824
+
 https://arxiv.org/pdf/2309.05665
 
 https://arxiv.org/abs/2212.03238

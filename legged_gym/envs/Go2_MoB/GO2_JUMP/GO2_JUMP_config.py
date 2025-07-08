@@ -21,8 +21,8 @@ class GO2_JUMP_Cfg_Yu( LeggedRobotCfg ):
         vertical_scale = 0.005 # [m]
         border_size = 25 # [m]
         curriculum = False
-        static_friction = 0.6
-        dynamic_friction = 0.6
+        static_friction = 1.0
+        dynamic_friction = 1.0
         restitution = 0.
         # rough terrain only:
         measure_heights = False
@@ -40,7 +40,7 @@ class GO2_JUMP_Cfg_Yu( LeggedRobotCfg ):
         # trimesh only:
         slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
     class commands:
-        curriculum = False
+        curriculum = True
         max_curriculum = 2.0
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 5. # time before command are changed[s]
@@ -119,14 +119,14 @@ class GO2_JUMP_Cfg_Yu( LeggedRobotCfg ):
         added_base_mass_range = [-1,1]
 
         randomize_link_mass = True
-        multiplied_link_mass_range = [0.95, 1.05]
+        multiplied_link_mass_range = [0.9, 1.1]
 
         randomize_base_com = True
         added_base_com_range = [-0.02, 0.02]
 
         randomize_pd_gains = True
         stiffness_multiplier_range = [0.9, 1.1]  
-        damping_multiplier_range = [0.1, 1.1]    
+        damping_multiplier_range = [0.9, 1.1]    
 
 
         randomize_motor_zero_offset = True
@@ -160,7 +160,7 @@ class GO2_JUMP_Cfg_Yu( LeggedRobotCfg ):
             collision = -1.
             feet_stumble = -0.0 
             action_rate = -0.01
-            stand_still = -2.
+            # stand_still = -2.
             default_pos =-0.1####
             default_hip_pos=0.3
             feet_contact_forces=-0.01

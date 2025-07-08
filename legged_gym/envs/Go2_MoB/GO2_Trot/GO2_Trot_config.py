@@ -5,24 +5,23 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
         # change the observation dim
         frame_stack = 10 #action stack
         c_frame_stack = 3 #critic 网络的堆叠帧数
+        num_envs = 4096
         num_single_obs = 47 #这个是传感器可以获得到的信息
         num_observations = int(frame_stack * num_single_obs) # 10帧正常的观测
-        single_num_privileged_obs = 70  #不平衡的观测，包含了特权信息，正常传感器获得不到的信息
+        single_num_privileged_obs = 68  #不平衡的观测，包含了特权信息，正常传感器获得不到的信息
         num_privileged_obs = int(c_frame_stack * single_num_privileged_obs) # 3帧特权观测
         num_actions = 12
-        num_envs = 4096
         episode_length_s = 24 # episode length in seconds
         env_spacing = 3.  # not used with heightfields/trimeshes 
-        joint_num = 12
         send_timeouts=True
     class terrain:
         mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
         horizontal_scale = 0.1 # [m]
         vertical_scale = 0.005 # [m]
         border_size = 25 # [m]
-        curriculum = False
-        static_friction = 0.6
-        dynamic_friction = 0.6
+        curriculum = True
+        static_friction = 1.0
+        dynamic_friction = 1.0
         restitution = 0.
         # rough terrain only:
         measure_heights = False
@@ -41,32 +40,31 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
         slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
     class commands:
         curriculum = True
-        max_curriculum = 4.0
+        max_curriculum = 1.5
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 5. # time before command are changed[s]
         heading_command = False # if true: compute ang vel command from heading error
         class ranges:
             lin_vel_x = [-1.0,1.0] # min max [m/s]
-            lin_vel_y = [-0.0, 0.0]   # min max [m/s]
-            ang_vel_yaw = [-0, 0]    # min max [rad/s]
+            lin_vel_y = [-1.0, 1.0]   # min max [m/s]
+            ang_vel_yaw = [-1, 1]    # min max [rad/s]
             heading = [-3.14, 3.14]
 
-    class init_state( LeggedRobotCfg.init_state ):
+    class init_state:
         pos = [0.0, 0.0, 0.42] # x,y,z [m]
         rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
         lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
-        default_joint_angles = { # = target angles [rad] when action = 0.0
-
+        default_joint_angles = {
             'FL_hip_joint': 0.05,   # [rad]
             'RL_hip_joint': 0.05,   # [rad]
             'FR_hip_joint': -0.05 ,  # [rad]
             'RR_hip_joint': -0.05,   # [rad]
 
             'FL_thigh_joint': 0.8,     # [rad]
-            'RL_thigh_joint': 0.8,#1.,   # [rad]
+            'RL_thigh_joint': 1.,   # [rad]
             'FR_thigh_joint': 0.8,     # [rad]
-            'RR_thigh_joint': 0.8,#1.,   # [rad]
+            'RR_thigh_joint': 1.,   # [rad]
 
             'FL_calf_joint': -1.5,   # [rad]
             'RL_calf_joint': -1.5,    # [rad]
@@ -74,8 +72,7 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
             'RR_calf_joint': -1.5,    # [rad]
         }
 
-
-    class control( LeggedRobotCfg.control ):
+    class control:
         # PD Drive parameters:
         control_type = 'P'
         stiffness = {'joint': 20.}  # [N*m/rad]
@@ -90,11 +87,8 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
         foot_name = "foot"
         penalize_contacts_on = ["thigh", "calf"]
         terminate_after_contacts_on = ["base"]
-        left_foot_name=["FL_foot", "FR_foot"]
-        right_foot_name=["RR_foot", "RL_foot"]
-        self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         disable_gravity = False
-        collapse_fixed_joints = True # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
+        collapse_fixed_joints = False # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
         fix_base_link = False # fixe the base of the robot
         default_dof_drive_mode = 3 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
@@ -124,11 +118,11 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
         multiplied_link_mass_range = [0.9, 1.1]
 
         randomize_base_com = True
-        added_base_com_range = [-0.03, 0.03]
+        added_base_com_range = [-0.02, 0.02]
 
         randomize_pd_gains = True
         stiffness_multiplier_range = [0.9, 1.1]  
-        damping_multiplier_range = [0.1, 1.1]    
+        damping_multiplier_range = [0.9, 1.1]    
 
 
         randomize_motor_zero_offset = True
@@ -149,36 +143,31 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
     class rewards:
         class scales:
             termination = -0.0
-            tracking_lin_vel = 2.0
-            tracking_ang_vel = 2.0
-            lin_vel_z = 0.1
-            ang_vel_xy = 0.1#0.5平地的
+            tracking_lin_vel = 2.
+            tracking_ang_vel = 1.
+            lin_vel_z = 0.2
+            ang_vel_xy = -0.05
             orientation = 0.4
-            torques = -0.0004
-            dof_vel = -0.0001
-            dof_acc = -1.5e-4
-            base_height = 0.4#0.1 
+            torques = -0.0002#
+            dof_acc = -2.5e-7#-7
             collision = -1.
-            action_rate = -0.005
-            stand_still = -2.
-            default_pos =-0.15####
-            # backward_thigh_pos=-0.05
-            feet_contact_forces=-0.01
-            trot=0.2
-            # feet_clearance=16.
+            action_rate = -0.01
+            # stand_still = -1.
+            base_height=0.2
+            trot=1.0
+            feet_clearance=0.5
+            # default_hip_pos=-0.2
+            default_pos=-0.15
 
-        only_positive_rewards = False # if true negative total rewards are clipped at zero (avoids early termination problems)
+        only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 0.9 # percentage of urdf limits, values above this limit are penalized
         soft_dof_vel_limit = 1.
         soft_torque_limit = 1.
-        base_height_target = 0.3#0.25
+        base_height_target = 0.29
         max_contact_force = 100. # forces above this value are penalized
-        cycle_time=1.5
-        min_feet_height=0.02
-        max_feet_height=0.04
-        # target_feet_height=0.03
-
+        cycle_time=0.5
+        target_foot_height=0.03
     class normalization:
         class obs_scales:
             lin_vel = 2.0

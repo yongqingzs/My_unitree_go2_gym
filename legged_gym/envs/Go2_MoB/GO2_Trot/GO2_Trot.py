@@ -57,21 +57,17 @@ class GO2_Trot_Robot(BaseTask):
         """
         clip_actions = self.cfg.normalization.clip_actions
         self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
-        
         # step physics and render each frame
         self.render()
         for _ in range(self.cfg.control.decimation):
-            action_delayed = self.update_cmd_action_latency_buffer()#????放在这里表示延迟了0.005秒的1到3帧月也就是最多0.015秒
-            #如果放到外面延迟最多能达到0.1秒是不符合常理的
+            action_delayed = self.update_cmd_action_latency_buffer()
             self.torques = self._compute_torques(action_delayed).view(self.torques.shape)
-            self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))#设置力矩
-
-            self.gym.simulate(self.sim)#前向仿真
+            self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
+            self.gym.simulate(self.sim)
             if self.device == 'cpu':
                 self.gym.fetch_results(self.sim, True)
             self.gym.refresh_dof_state_tensor(self.sim)
             self.update_obs_latency_buffer()
-        
         self.post_physics_step()
 
         # return clipped obs, clipped states (None), rewards, dones and infos
@@ -80,15 +76,6 @@ class GO2_Trot_Robot(BaseTask):
         if self.privileged_obs_buf is not None:
             self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
         return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras
-
-
-    def reset(self):
-        """ Reset all robots"""
-        self.reset_idx(torch.arange(self.num_envs, device=self.device))
-        obs, privileged_obs, _, _, _ = self.step(torch.zeros(
-            self.num_envs, self.num_actions, device=self.device, requires_grad=False))
-        return obs, privileged_obs
-    
     def update_cmd_action_latency_buffer(self):
         actions_scaled = self.actions * self.cfg.control.action_scale
         if self.cfg.domain_rand.add_cmd_action_latency:
@@ -142,20 +129,14 @@ class GO2_Trot_Robot(BaseTask):
         self.reset_idx(env_ids)
         self.compute_observations() # in some cases a simulation step might be required to refresh some obs (for example body positions)
 
-        self.last_last_actions[:] = torch.clone(self.last_actions[:])
         self.last_actions[:] = self.actions[:]
         self.last_dof_vel[:] = self.dof_vel[:]
         self.last_root_vel[:] = self.root_states[:, 7:13]
-        self.last_rigid_state[:] = self.rigid_state[:]
-
-        if self.viewer and self.enable_viewer_sync and self.debug_viz:
-            self._draw_debug_vis()
 
     def check_termination(self):
         """ Check if environments need to be reset
         """
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
-        # print(torch.sum(self.reset_buf))
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
         self.reset_buf |= self.time_out_buf
 
@@ -180,40 +161,30 @@ class GO2_Trot_Robot(BaseTask):
         
         # reset robot states
         self._reset_dofs(env_ids)
-
         self._reset_root_states(env_ids)
-
         self._resample_commands(env_ids)
 
         # reset buffers
-        self.last_last_actions[env_ids] = 0.
         self.actions[env_ids] = 0.
         self.last_actions[env_ids] = 0.
-        self.last_rigid_state[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
         self.feet_air_time[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
-        # self.reset_buf[env_ids] = 1 #????是为1的时候才重置吗还是为0的时候重置
-
-        # reset latency buffers and randomization
+        self.reset_buf[env_ids] = 1
         self._reset_latency_buffer(env_ids)
-
         # fill extras
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
-
         # log additional curriculum info
         if self.cfg.terrain.mesh_type == "trimesh":
             self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
         if self.cfg.commands.curriculum:
             self.extras["episode"]["max_command_x"] = self.command_ranges["lin_vel_x"][1]
-
         # send timeout info to the algorithm
         if self.cfg.env.send_timeouts:
-            self.extras["time_outs"] = self.time_out_buf
-            
+            self.extras["time_outs"] = self.time_out_buf         
         # fix reset gravity bug
         self.base_quat[env_ids] = self.root_states[env_ids, 3:7]
         self.base_euler_xyz = get_euler_xyz_tensor(self.base_quat)
@@ -232,7 +203,6 @@ class GO2_Trot_Robot(BaseTask):
             adds each terms to the episode sums and to the total reward
         """
         self.rew_buf[:] = 0.
-
         for i in range(len(self.reward_functions)):
             name = self.reward_names[i]
             rew = self.reward_functions[i]() * self.reward_scales[name]
@@ -248,19 +218,15 @@ class GO2_Trot_Robot(BaseTask):
     
     def _get_phase(self):
         cycle_time = self.cfg.rewards.cycle_time
-        phase = self.episode_length_buf * self.dt / cycle_time
+        phase = (self.episode_length_buf * self.dt)%cycle_time/cycle_time
         return phase
 
     def _get_gait_phase(self):
         # return float mask 1 is stance, 0 is swing
         phase = self._get_phase()
-        # Add double support phase
         stance_mask = torch.zeros((self.num_envs, 2), device=self.device)
-        # left foot stance
         stance_mask[:, 0] = phase<0.5
-        # right foot stance
         stance_mask[:, 1] = phase>0.5
-
         return stance_mask
     
     def compute_observations(self):
@@ -278,15 +244,13 @@ class GO2_Trot_Robot(BaseTask):
 
         self.privileged_obs_buf = torch.cat((
             self.command_input,  # 2 + 3 控制输入 ，相位，目标速度，角速度
-            (self.dof_pos - self.default_joint_pd_target) * self.obs_scales.dof_pos,  # 12  当前关节位置与默认关节位置之差
+            (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,  # 12  当前关节位置与默认关节位置之差
             self.dof_pos * self.obs_scales.dof_pos,  # 12
             self.dof_vel * self.obs_scales.dof_vel,  # 速度乘以缩放因子 12
             self.actions,  # 12
             self.base_lin_vel * self.obs_scales.lin_vel,  # 3
             self.base_ang_vel * self.obs_scales.ang_vel,  # 3
             self.base_euler_xyz *self.cfg.normalization.obs_scales.quat,  # 3
-            self.env_frictions,  # 1
-            self.body_mass / 10.,  # 1
             stance_mask,  # 2
             contact_mask,  # 2    
             
@@ -369,7 +333,7 @@ class GO2_Trot_Robot(BaseTask):
             if env_id==0:
                 # prepare friction randomization
                 friction_range = self.cfg.domain_rand.friction_range
-                num_buckets = 256
+                num_buckets = 64
                 bucket_ids = torch.randint(0, num_buckets, (self.num_envs, 1))
                 friction_buckets = torch_rand_float(friction_range[0], friction_range[1], (num_buckets,1), device='cpu')
                 self.friction_coeffs = friction_buckets[bucket_ids]
@@ -377,8 +341,6 @@ class GO2_Trot_Robot(BaseTask):
             for s in range(len(props)):
                 props[s].friction = self.friction_coeffs[env_id]
                 
-            self.env_frictions[env_id] = self.friction_coeffs[env_id]
-            
         return props
 
     def _process_dof_props(self, props, env_id):
@@ -414,13 +376,7 @@ class GO2_Trot_Robot(BaseTask):
             self.d_gains_multiplier[env_id, :] =  torch_rand_float(self.cfg.domain_rand.damping_multiplier_range[0], self.cfg.domain_rand.damping_multiplier_range[1], (1,self.num_actions), device=self.device)   
         
 
-        for i in range(len(props)):
-             props["friction"][i] *= self.joint_friction_coeffs[env_id, 0]
-             props["damping"][i] *= self.joint_damping_coeffs[env_id, 0]
-             props["armature"][i] = self.joint_armatures[env_id, 0]
-
         return props
-
     def _process_rigid_body_props(self, props, env_id):
         # randomize base mass
         if self.cfg.domain_rand.randomize_base_mass:
@@ -454,8 +410,7 @@ class GO2_Trot_Robot(BaseTask):
             heading = torch.atan2(forward[:, 1], forward[:, 0])
             self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
-        if self.cfg.terrain.measure_heights:
-            self.measured_heights = self._get_heights()
+
         if self.cfg.domain_rand.push_robots and  (self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
             self._push_robots()
 
@@ -517,20 +472,16 @@ class GO2_Trot_Robot(BaseTask):
         if self.custom_origins:
             self.root_states[env_ids] = self.base_init_state
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
-            self.root_states[env_ids, :2] += torch_rand_float(-4., 4., (len(env_ids), 2), device=self.device) # xy position within 1m of the center
+            self.root_states[env_ids, :2] += torch_rand_float(-1., 1., (len(env_ids), 2), device=self.device) # xy position within 1m of the center
         else:
             self.root_states[env_ids] = self.base_init_state
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
         # base velocities
-        # self.root_states[env_ids, 7:13] = torch_rand_float(-0.01, 0.01, (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
-        if self.cfg.asset.fix_base_link:
-            self.root_states[env_ids, 7:13] = 0
-            self.root_states[env_ids, 2] += 1.8
+
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_actor_root_state_tensor_indexed(self.sim,
                                                      gymtorch.unwrap_tensor(self.root_states),
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
-    
     def _reset_latency_buffer(self,env_ids):
         if self.cfg.domain_rand.add_cmd_action_latency:   
             self.cmd_action_latency_buffer[env_ids, :, :] = 0.0
@@ -554,7 +505,7 @@ class GO2_Trot_Robot(BaseTask):
                                                         self.cfg.domain_rand.range_obs_imu_latency[1]+1, (len(env_ids),),device=self.device)
             else:
                 self.obs_imu_latency_simstep[env_ids] = self.cfg.domain_rand.range_obs_imu_latency[1]
-                
+    
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. 
         """
@@ -563,7 +514,6 @@ class GO2_Trot_Robot(BaseTask):
         self.root_states[:, 7:9] = torch_rand_float(-max_vel, max_vel, (self.num_envs, 2), device=self.device) # lin vel x/y
         self.root_states[:, 10:13] = torch_rand_float(-max_push_angular, max_push_angular, (self.num_envs, 3), device=self.device) # ang vel
         self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.root_states))
-
 
     def _update_terrain_curriculum(self, env_ids):
         """ Implements the game-inspired curriculum.
@@ -586,7 +536,7 @@ class GO2_Trot_Robot(BaseTask):
                                                    torch.randint_like(self.terrain_levels[env_ids], self.max_terrain_level),
                                                    torch.clip(self.terrain_levels[env_ids], 0)) # (the minumum level is zero)
         self.env_origins[env_ids] = self.terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
-    
+
     def update_command_curriculum(self, env_ids):
         """ Implements a curriculum of increasing commands
 
@@ -632,18 +582,15 @@ class GO2_Trot_Robot(BaseTask):
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
         self.gym.refresh_rigid_body_state_tensor(self.sim)
-        
 
         # create some wrapper tensors for different slices
-        self.root_states = gymtorch.wrap_tensor(actor_root_state) #基坐标 的位置和四元数线速度角速度
-        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor) #关节位置和速度
+        self.root_states = gymtorch.wrap_tensor(actor_root_state)
+        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
         self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
         self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
         self.base_quat = self.root_states[:, 3:7]
         self.base_euler_xyz = get_euler_xyz_tensor(self.base_quat)
-
         self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
-        # self.rigid_state = gymtorch.wrap_tensor(rigid_body_state).view(self.num_envs, 13, 13)
         self.rigid_state = gymtorch.wrap_tensor(rigid_body_state).view(self.num_envs, self.num_bodies, 13)
 
         # initialize some data used later on
@@ -655,8 +602,6 @@ class GO2_Trot_Robot(BaseTask):
         self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-        self.last_last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-        self.last_rigid_state = torch.zeros_like(self.rigid_state)
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
         self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
         self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
@@ -666,9 +611,6 @@ class GO2_Trot_Robot(BaseTask):
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
-        if self.cfg.terrain.measure_heights:
-            self.height_points = self._init_height_points()
-        self.measured_heights = 0
 
         # joint positions offsets and PD gains
         self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
@@ -684,13 +626,10 @@ class GO2_Trot_Robot(BaseTask):
             if not found:
                 self.p_gains[i] = 0.
                 self.d_gains[i] = 0.
-                print(f"PD gain of joint {name} were not defined, setting them to zero")
-       
-        self.rand_push_force = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
-        self.rand_push_torque = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+                if self.cfg.control.control_type in ["P", "V"]:
+                    print(f"PD gain of joint {name} were not defined, setting them to zero")
         self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
 
-        self.default_joint_pd_target = self.default_dof_pos.clone()
         self.obs_history = deque(maxlen=self.cfg.env.frame_stack)
         self.critic_history = deque(maxlen=self.cfg.env.c_frame_stack)
         for _ in range(self.cfg.env.frame_stack):
@@ -742,7 +681,6 @@ class GO2_Trot_Robot(BaseTask):
         plane_params.dynamic_friction = self.cfg.terrain.dynamic_friction
         plane_params.restitution = self.cfg.terrain.restitution
         self.gym.add_ground(self.sim, plane_params)
-    
     def _create_heightfield(self):
         """ Adds a heightfield terrain to the simulation, sets parameters based on the cfg.
         """
@@ -814,11 +752,11 @@ class GO2_Trot_Robot(BaseTask):
 
         # save body names from the asset
         body_names = self.gym.get_asset_rigid_body_names(robot_asset)
-        # print("body_names", body_names)
         self.dof_names = self.gym.get_asset_dof_names(robot_asset)
         self.num_bodies = len(body_names)
         self.num_dofs = len(self.dof_names)
         feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
+        print(feet_names)
         penalized_contact_names = []
         for name in self.cfg.asset.penalize_contacts_on:
             penalized_contact_names.extend([s for s in body_names if name in s])
@@ -826,30 +764,11 @@ class GO2_Trot_Robot(BaseTask):
         for name in self.cfg.asset.terminate_after_contacts_on:
             termination_contact_names.extend([s for s in body_names if name in s])
 
-        left_foot_name=[]
-        for name in self.cfg.asset.left_foot_name:
-            left_foot_name.extend([s for s in body_names if name in s])
-        right_foot_name=[]
-        for name in self.cfg.asset.right_foot_name:
-            right_foot_name.extend([s for s in body_names if name in s])
-        print("left_foot_name",left_foot_name)
-        print("right_foot_name",right_foot_name)
-
-
         base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
         self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
         start_pose = gymapi.Transform()
         start_pose.p = gymapi.Vec3(*self.base_init_state[:3])
 
-        
-        self.joint_friction_coeffs = torch.ones(self.num_envs, 1, dtype=torch.float, device=self.device,requires_grad=False)
-
-        self.joint_damping_coeffs = torch.ones(self.num_envs, 1, dtype=torch.float, device=self.device,requires_grad=False)
-
-        self.joint_armatures = torch.zeros(self.num_envs, 1, dtype=torch.float, device=self.device,requires_grad=False)  
-            
-        self.torque_multiplier = torch.ones(self.num_envs, self.num_actions, dtype=torch.float, device=self.device,
-                                          requires_grad=False)
         self.motor_zero_offsets = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device,
                                          requires_grad=False) 
         self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
@@ -861,10 +780,6 @@ class GO2_Trot_Robot(BaseTask):
         env_upper = gymapi.Vec3(0., 0., 0.)
         self.actor_handles = []
         self.envs = []
-        self.env_frictions = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device)
-
-        self.body_mass = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
-
         for i in range(self.num_envs):
             # create env instance
             env_handle = self.gym.create_env(self.sim, env_lower, env_upper, int(np.sqrt(self.num_envs)))
@@ -894,14 +809,7 @@ class GO2_Trot_Robot(BaseTask):
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
 
-
-        self.left_foot_name_indices = torch.zeros(len(left_foot_name), dtype=torch.long, device=self.device, requires_grad=False)
-        for i in range(len(left_foot_name)):
-            self.left_foot_name_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], left_foot_name[i])
-
-        self.right_foot_name_indices = torch.zeros(len(right_foot_name), dtype=torch.long, device=self.device, requires_grad=False)
-        for i in range(len(right_foot_name)):
-            self.right_foot_name_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], right_foot_name[i])
+        self.trot=torch.zeros(1, dtype=torch.long, device=self.device, requires_grad=False)
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
             Otherwise create a grid.
@@ -941,126 +849,61 @@ class GO2_Trot_Robot(BaseTask):
 
         self.cfg.domain_rand.push_interval = np.ceil(self.cfg.domain_rand.push_interval_s / self.dt)
 
-    def _draw_debug_vis(self):
-        """ Draws visualizations for dubugging (slows down simulation a lot).
-            Default behaviour: draws height measurement points
-        """
-        # draw height lines
-        if not self.terrain.cfg.measure_heights:
-            return
-        self.gym.clear_lines(self.viewer)
-        self.gym.refresh_rigid_body_state_tensor(self.sim)
-        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 1, 0))
-        for i in range(self.num_envs):
-            base_pos = (self.root_states[i, :3]).cpu().numpy()
-            heights = self.measured_heights[i].cpu().numpy()
-            height_points = quat_apply_yaw(self.base_quat[i].repeat(heights.shape[0]), self.height_points[i]).cpu().numpy()
-            for j in range(heights.shape[0]):
-                x = height_points[j, 0] + base_pos[0]
-                y = height_points[j, 1] + base_pos[1]
-                z = heights[j]
-                sphere_pose = gymapi.Transform(gymapi.Vec3(x, y, z), r=None)
-                gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose) 
+    #------------ reward functions----------------
 
-    def _init_height_points(self):
-        """ Returns points at which the height measurments are sampled (in base frame)
-
-        Returns:
-            [torch.Tensor]: Tensor of shape (num_envs, self.num_height_points, 3)
-        """
-        y = torch.tensor(self.cfg.terrain.measured_points_y, device=self.device, requires_grad=False)
-        x = torch.tensor(self.cfg.terrain.measured_points_x, device=self.device, requires_grad=False)
-        grid_x, grid_y = torch.meshgrid(x, y)
-
-        self.num_height_points = grid_x.numel()
-        points = torch.zeros(self.num_envs, self.num_height_points, 3, device=self.device, requires_grad=False)
-        points[:, :, 0] = grid_x.flatten()
-        points[:, :, 1] = grid_y.flatten()
-        return points
-
-    def _get_heights(self, env_ids=None):
-        """ Samples heights of the terrain at required points around each robot.
-            The points are offset by the base's position and rotated by the base's yaw
-
-        Args:
-            env_ids (List[int], optional): Subset of environments for which to return the heights. Defaults to None.
-
-        Raises:
-            NameError: [description]
-
-        Returns:
-            [type]: [description]
-        """
-        if self.cfg.terrain.mesh_type == 'plane':
-            return torch.zeros(self.num_envs, self.num_height_points, device=self.device, requires_grad=False)
-        elif self.cfg.terrain.mesh_type == 'none':
-            raise NameError("Can't measure height with terrain mesh type 'none'")
-
-        if env_ids:
-            points = quat_apply_yaw(self.base_quat[env_ids].repeat(1, self.num_height_points), self.height_points[env_ids]) + (self.root_states[env_ids, :3]).unsqueeze(1)
-        else:
-            points = quat_apply_yaw(self.base_quat.repeat(1, self.num_height_points), self.height_points) + (self.root_states[:, :3]).unsqueeze(1)
-
-        points += self.terrain.cfg.border_size
-        points = (points/self.terrain.cfg.horizontal_scale).long()
-        px = points[:, :, 0].view(-1)
-        py = points[:, :, 1].view(-1)
-        px = torch.clip(px, 0, self.height_samples.shape[0]-2)
-        py = torch.clip(py, 0, self.height_samples.shape[1]-2)
-
-        heights1 = self.height_samples[px, py]
-        heights2 = self.height_samples[px+1, py]
-        heightXBotL = self.height_samples[px, py+1]
-        heights = torch.min(heights1, heights2)
-        heights = torch.min(heights, heightXBotL)
-
-        return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
-
-
-
-    def _reward_trot(self):#相位的问题
+    def _reward_trot(self):
         """
         Calculates a reward based on the number of feet contacts aligning with the gait phase. 
         Rewards or penalizes depending on whether the foot contact matches the expected gait phase.
         """
-        left_contact = self.contact_forces[:, self.left_foot_name_indices, 2] > 5. #左前和右后
-        right_contact = self.contact_forces[:, self.right_foot_name_indices, 2] > 5. #右前和左后
+        contact = self.contact_forces[:, self.feet_indices, 2] > 5.
+
         stance_mask = self._get_gait_phase()
-        TROT=(left_contact[:,0]==stance_mask[:,0]) +(left_contact[:,1]==stance_mask[:,0]) + (right_contact[:,0]==stance_mask[:,1]) + (right_contact[:,1]==stance_mask[:,1]) 
+        TROT = (contact[:,0] == contact[:,3]) & \
+            (contact[:,1] == contact[:,2]) & \
+            (contact[:,0] == stance_mask[:,0]) & \
+            (contact[:,1] == stance_mask[:,1])
+        # print( JUMP.to(torch.float32).mean())
+        # print(self.feet_indices)['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot'] tensor([ 6, 12, 20, 26], device='cuda:0')
+        self.trot=TROT.to(torch.float32).mean()
+        # print(stance_mask[0,0],stance_mask[0,1],phase)
         return TROT*(torch.norm(self.commands[:, :2], dim=1) > 0.2)
 
-    def _reward_backward_thigh_pos(self):
+    def _reward_default_hip_pos(self):
         """
         Calculates the reward for keeping joint positions close to default positions, with a focus 
         on penalizing deviation in yaw and roll directions. Excludes yaw and roll from the main penalty.
         """
-        joint_diff = torch.abs(self.dof_pos[:,7]-1.0)+torch.abs(self.dof_pos[:,10]-1.0)
-        # print("!!!!!1",joint_diff[0])
-        return joint_diff
+        joint_diff = torch.abs(self.dof_pos[:,0])+torch.abs(self.dof_pos[:,3])+torch.abs(self.dof_pos[:,6])+torch.abs(self.dof_pos[:,9])
+        # print("!!!!!1",torch.exp(-joint_diff * 4).shape)
+        return joint_diff  
 
-    def _reward_feet_clearance(self):
-        # 计算脚离地高度（减去地面厚度）
-        left_height = self.rigid_state[:, self.left_foot_name_indices, 2] - 0.02
-        right_height = self.rigid_state[:, self.right_foot_name_indices, 2] - 0.02
-        
-        # 获取摆动阶段掩码
-        swing_mask = 1 - self._get_gait_phase()
-        
-        # 计算高度差（连续奖励）
-        left_height_diff = torch.clamp(left_height - self.cfg.rewards.min_feet_height, 
-                                    min=0, max=self.cfg.rewards.max_feet_height)
-        right_height_diff = torch.clamp(right_height - self.cfg.rewards.min_feet_height,
-                                    min=0, max=self.cfg.rewards.max_feet_height)
-        
-        # 应用摆动阶段掩码
-        reward = torch.sum(left_height_diff * swing_mask[:,:1].repeat(1,2) + 2*right_height_diff * swing_mask[:,-1:].repeat(1,2), dim=1)
-        return reward*(torch.norm(self.commands[:, :2], dim=1) > 0.2)
-        
+    def _reward_feet_clearance(self):#鼓励抬脚高度
+        """
+        Calculates reward based on the clearance of the swing leg from the ground during movement.
+        Encourages appropriate lift of the feet during the swing phase of the gait.
+        """
+        # Compute feet contact mask
+        self.feet_height =self.rigid_state[:, self.feet_indices, 2] - 0.02
+        left_feet_height=self.feet_height[:,::3]
+        right_feet_height=self.feet_height[:,1:3]
+        # Compute swing mask
+        swing_mask = (1 - self._get_gait_phase())
+        phase=self._get_phase()
+        # feet height should larger than target feet height at the peak
+        target_height=(torch.abs(torch.sin(2*torch.pi*phase))*self.cfg.rewards.target_foot_height).unsqueeze(1).repeat(1,2)
+        # print(left_feet_height.shape,right_feet_height.shape,target_height.shape)
+        rew=torch.exp(-torch.sum(torch.abs(left_feet_height-target_height)*swing_mask[:,0].unsqueeze(1).repeat(1,2),dim=1)*50)
+        # print(rew[0],torch.sum(torch.abs(left_feet_height-target_height),dim=1)[0])
+        rew+=torch.exp(-torch.sum(torch.abs(right_feet_height-target_height)*swing_mask[:,1].unsqueeze(1).repeat(1,2),dim=1)*50)
+        return rew*(torch.norm(self.commands[:, :2], dim=1) > 0.2)
+    
     def _reward_lin_vel_z(self):
-        return torch.exp(-torch.abs(self.base_lin_vel[:, 2]*10))
+        return torch.exp(-torch.abs(self.base_lin_vel[:, 2])*5)
     
     def _reward_ang_vel_xy(self):
-        return torch.exp(-torch.norm(torch.abs(self.base_ang_vel[:, :2]*2), dim=1))
+        # Penalize xy axes base angular velocity
+        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
     
     def _reward_orientation(self):
 
@@ -1068,13 +911,13 @@ class GO2_Trot_Robot(BaseTask):
 
     def _reward_base_height(self):
         # Penalize base height away from target
-        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
+        base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) , dim=1)
 
         return torch.exp(-torch.abs(base_height - self.cfg.rewards.base_height_target)*10)
-
+    
     def _reward_torques(self):
         # Penalize torques
-        return torch.sum(torch.abs(self.torques), dim=1)
+        return torch.sum(torch.square(self.torques), dim=1)
 
     def _reward_dof_vel(self):
         # Penalize dof velocities
@@ -1082,14 +925,11 @@ class GO2_Trot_Robot(BaseTask):
     
     def _reward_dof_acc(self):
         # Penalize dof accelerations
-        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel)), dim=1)
+        return torch.sum(torch.square((self.last_dof_vel - self.dof_vel) / self.dt), dim=1)
     
     def _reward_action_rate(self):
         # Penalize changes in actions
-        # print("!!!!!!11",torch.mean(torch.sum(torch.square(self.last_actions - self.actions), dim=1)))
-        return  torch.sum(torch.square(self.last_actions - self.actions), dim=1)
-
-    
+        return torch.sum(torch.square(self.last_actions - self.actions), dim=1)
     def _reward_collision(self):
         # Penalize collisions on selected bodies
         return torch.sum(1.*(torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
@@ -1098,62 +938,30 @@ class GO2_Trot_Robot(BaseTask):
         # Terminal reward / penalty
         return self.reset_buf * ~self.time_out_buf
     
-    def _reward_dof_pos_limits(self):
-        # Penalize dof positions too close to the limit
-        out_of_limits = -(self.dof_pos - self.dof_pos_limits[:, 0]).clip(max=0.) # lower limit
-        out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.)
-        return torch.sum(out_of_limits, dim=1)
-
     def _reward_dof_vel_limits(self):
         # Penalize dof velocities too close to the limit
         # clip to max error = 1 rad/s per joint to avoid huge penalties
         return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits*self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
 
-    def _reward_torque_limits(self):
-        # penalize torques too close to the limit
-        return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
-
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-
-        reward=torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma)#*(torch.norm(self.commands[:, :2], dim=1) > 0.2)
-        return reward
+        return torch.exp(-lin_vel_error/self.cfg.rewards.tracking_sigma)*(self.trot>0.78)
     
     def _reward_tracking_ang_vel(self):
         # Tracking of angular velocity commands (yaw) 
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
-        reward =torch.exp(-ang_vel_error/self.cfg.rewards.tracking_sigma)
-        return reward
+        return torch.exp(-ang_vel_error/self.cfg.rewards.tracking_sigma)*(self.trot>0.78)
 
-
-    # def _reward_feet_air_time(self):
-    #     # Reward long steps
-    #     # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
-    #     contact = self.contact_forces[:, self.feet_indices, 2] > 1.
-    #     contact_filt = torch.logical_or(contact, self.last_contacts) 
-    #     self.last_contacts = contact
-    #     first_contact = (self.feet_air_time > 0.) * contact_filt
-    #     self.feet_air_time += self.dt
-    #     rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
-    #     rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
-    #     self.feet_air_time *= ~contact_filt
-    #     return rew_airTime
-    
-    # def _reward_feet_stumble(self):
-    #     # Penalize feet hitting vertical surfaces
-    #     return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) >\
-    #          5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
-        
     def _reward_stand_still(self):
         # Penalize motion at zero commands
-        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1)*(torch.norm(self.commands[:, :2], dim=1) < 0.1)
-    def _reward_default_pos(self):
-        # Penalize motion at zero commands
-        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) #* (torch.norm(self.commands[:, :2], dim=1) < 0.1)
-    
+        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1)*(torch.norm(self.commands[:, :3], dim=1) < 0.1)
 
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
 
+    def _reward_default_pos(self):
+        # Penalize motion at zero commands
+        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) #* (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+    
