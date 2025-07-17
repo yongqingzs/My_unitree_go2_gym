@@ -409,8 +409,6 @@ class GO2_Stairs_Robot(BaseTask):
             forward = quat_apply(self.base_quat, self.forward_vec)
             heading = torch.atan2(forward[:, 1], forward[:, 0])
             self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
-        if self.cfg.terrain.measure_heights:
-            self.measured_heights = self._get_heights()
 
         if self.cfg.domain_rand.push_robots and  (self.common_step_counter % self.cfg.domain_rand.push_interval == 0):
             self._push_robots()
@@ -890,12 +888,11 @@ class GO2_Stairs_Robot(BaseTask):
         points[:, :, 1] = grid_y.flatten()
         return points
 
-    def _get_heights(self, env_ids=None):
-        """ Samples heights of the terrain at required points around each robot.
-            The points are offset by the base's position and rotated by the base's yaw
+    def get_terrain_height(self,p):
+        """ Samples heights of the terrain at the required global coordinates point.
 
         Args:
-            env_ids (List[int], optional): Subset of environments for which to return the heights. Defaults to None.
+            p (Tensor): Tensor of shape (n, 2) containing the global xy coordinates of the points to sample
 
         Raises:
             NameError: [description]
@@ -904,29 +901,28 @@ class GO2_Stairs_Robot(BaseTask):
             [type]: [description]
         """
         if self.cfg.terrain.mesh_type == 'plane':
-            return torch.zeros(self.num_envs, self.num_height_points, device=self.device, requires_grad=False)
+            return torch.zeros(self.num_envs, device=self.device, requires_grad=False)
         elif self.cfg.terrain.mesh_type == 'none':
             raise NameError("Can't measure height with terrain mesh type 'none'")
 
-        if env_ids:
-            points = quat_apply_yaw(self.base_quat[env_ids].repeat(1, self.num_height_points), self.height_points[env_ids]) + (self.root_states[env_ids, :3]).unsqueeze(1)
-        else:
-            points = quat_apply_yaw(self.base_quat.repeat(1, self.num_height_points), self.height_points) + (self.root_states[:, :3]).unsqueeze(1)
+        points = p.clone()
 
         points += self.terrain.cfg.border_size
         points = (points/self.terrain.cfg.horizontal_scale).long()
-        px = points[:, :, 0].view(-1)
-        py = points[:, :, 1].view(-1)
+
+        px = points[:, 0].view(-1)
+        py = points[:, 1].view(-1)
         px = torch.clip(px, 0, self.height_samples.shape[0]-2)
         py = torch.clip(py, 0, self.height_samples.shape[1]-2)
 
         heights1 = self.height_samples[px, py]
         heights2 = self.height_samples[px+1, py]
-        heightXBotL = self.height_samples[px, py+1]
+        heights3 = self.height_samples[px, py+1]
         heights = torch.min(heights1, heights2)
-        heights = torch.min(heights, heightXBotL)
-        # print(heights.view(self.num_envs, -1).shape)
-        return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
+        heights = torch.min(heights, heights3)
+
+        return heights.view(p.shape[0]) * self.terrain.cfg.vertical_scale
+        # return heights.view(p.shape[0], -1) * self.terrain.cfg.vertical_scale
     #------------ reward functions----------------
 
     def _reward_trot(self):
@@ -955,7 +951,12 @@ class GO2_Stairs_Robot(BaseTask):
         # Compute feet contact mask
         # print(self.rigid_state[:, self.feet_indices, 2].shape,self.measured_heights.shape)
 
-        self.feet_height =self.rigid_state[:, self.feet_indices, 2] - 0.02-self.measured_heights.mean(dim=1).unsqueeze(1)
+        self.feet_height =self.rigid_state[:, self.feet_indices, 2] - 0.02
+        self.feet_height[:,0]-=self.get_terrain_height(self.rigid_state[:, self.feet_indices[0], :2])
+        self.feet_height[:,1]-=self.get_terrain_height(self.rigid_state[:, self.feet_indices[1], :2])
+        self.feet_height[:,2]-=self.get_terrain_height(self.rigid_state[:, self.feet_indices[2], :2])
+        self.feet_height[:,3]-=self.get_terrain_height(self.rigid_state[:, self.feet_indices[3], :2])
+        # print(self.feet_height[0])
         left_feet_height=self.feet_height[:,::3]
         right_feet_height=self.feet_height[:,1:3]
         # Compute swing mask
@@ -983,7 +984,7 @@ class GO2_Stairs_Robot(BaseTask):
     def _reward_base_height(self):
         # Penalize base height away from target
         # print(self.root_states[0, 2],self.measured_heights.mean(dim=1)[0])
-        base_height = self.root_states[:, 2]-self.measured_heights.mean(dim=1)
+        base_height = self.root_states[:, 2]-self.get_terrain_height(self.root_states[:,:2])
 
         return torch.exp(-torch.abs(base_height - self.cfg.rewards.base_height_target)*10)
     
@@ -1036,11 +1037,6 @@ class GO2_Stairs_Robot(BaseTask):
     def _reward_default_pos(self):
         # Penalize motion at zero commands
         return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) #* (torch.norm(self.commands[:, :2], dim=1) < 0.1)
-    
-    def _reward_default_hip_pos(self):
-        # Penalize motion at zero commands
-        diff=torch.abs(self.dof_pos - self.default_dof_pos) #* (torch.norm(self.commands[:, :2], dim=1) < 0.1)
-        return diff[:,0]+diff[:,3]+diff[:,6]+diff[:,9]
     def _reward_stumble(self):
         # Penalize feet hitting vertical surfaces
         return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) >\

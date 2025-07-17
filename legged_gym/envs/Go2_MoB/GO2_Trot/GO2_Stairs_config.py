@@ -3,7 +3,7 @@ from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobot
 class GO2_Stairs_Cfg_Yu( LeggedRobotCfg ):
     class env:
         # change the observation dim
-        frame_stack = 10 #action stack
+        frame_stack = 3 #action stack
         c_frame_stack = 3 #critic 网络的堆叠帧数
         num_envs = 4096
         num_single_obs = 47 #这个是传感器可以获得到的信息
@@ -56,15 +56,15 @@ class GO2_Stairs_Cfg_Yu( LeggedRobotCfg ):
         lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
         default_joint_angles = {
-            'FL_hip_joint': 0.05,   # [rad]
-            'RL_hip_joint': 0.05,   # [rad]
-            'FR_hip_joint': -0.05 ,  # [rad]
-            'RR_hip_joint': -0.05,   # [rad]
+            'FL_hip_joint': 0.0,   # [rad]
+            'RL_hip_joint': 0.0,   # [rad]
+            'FR_hip_joint': -0.0 ,  # [rad]
+            'RR_hip_joint': -0.0,   # [rad]
 
             'FL_thigh_joint': 0.8,     # [rad]
-            'RL_thigh_joint': 1.,   # [rad]
+            'RL_thigh_joint': 0.8,   # [rad]
             'FR_thigh_joint': 0.8,     # [rad]
-            'RR_thigh_joint': 1.,   # [rad]
+            'RR_thigh_joint': 0.8,   # [rad]
 
             'FL_calf_joint': -1.5,   # [rad]
             'RL_calf_joint': -1.5,    # [rad]
@@ -143,8 +143,8 @@ class GO2_Stairs_Cfg_Yu( LeggedRobotCfg ):
     class rewards:
         class scales:
             termination = -0.0
-            tracking_lin_vel = 2.
-            tracking_ang_vel = 2.
+            tracking_lin_vel = 4.
+            tracking_ang_vel = 4.
             lin_vel_z = 0.2
             ang_vel_xy = -0.02
             orientation = 0.2
@@ -153,11 +153,10 @@ class GO2_Stairs_Cfg_Yu( LeggedRobotCfg ):
             dof_vel=-0.0005
             collision = -1.
             action_rate = -0.01
-            base_height=0.25
-            trot=0.8
-            feet_clearance=0.4
+            base_height=0.2
+            trot=1.0
+            feet_clearance=1.0
             default_pos=-0.15
-            default_hip_pos=-0.15
             stumble=-6.
 
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
@@ -168,7 +167,7 @@ class GO2_Stairs_Cfg_Yu( LeggedRobotCfg ):
         base_height_target = 0.29
         max_contact_force = 100. # forces above this value are penalized
         cycle_time=0.5
-        target_foot_height=0.15
+        target_foot_height=0.2
     class normalization:
         class obs_scales:
             lin_vel = 2.0
@@ -253,7 +252,7 @@ class GO2_Stairs_PPO_Yu(LeggedRobotCfgPPO):
                        -38,39,40,-35,36,37,-44,45,46,-41,42,43]
 
         act_permutation = [ -3, 4, 5, -0.0001, 1, 2, -9, 10, 11,-6, 7, 8,]#关节电机的对陈关系
-        frame_stack = 10
+        frame_stack = 3
         sym_coef = 1.0
     class runner:
         policy_class_name = 'ActorCritic'

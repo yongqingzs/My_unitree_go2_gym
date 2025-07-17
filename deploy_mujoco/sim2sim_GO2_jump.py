@@ -139,7 +139,7 @@ def run_mujoco(policy, cfg):
                 obs[0, 1] = math.cos(2 * math.pi * count_lowlevel * cfg.sim_config.dt  / cfg.rewards.cycle_time)
                 obs[0, 2] = x_vel_cmd * cfg.normalization.obs_scales.lin_vel
                 obs[0, 3] = y_vel_cmd * cfg.normalization.obs_scales.lin_vel
-                obs[0, 4] = yaw_vel_cmd * cfg.normalization.obs_scales.ang_vel
+                obs[0, 4] = 0.6
                 obs[0, 5:8] = omega*cfg.normalization.obs_scales.ang_vel
                 obs[0, 8:11] = eu_ang*cfg.normalization.obs_scales.quat
 
@@ -187,7 +187,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Deployment script.')
-    parser.add_argument('--load_model', type=str, default="./logs/go2_jump/exported/policies/policy_1.pt",help='Run to load from.')
+    parser.add_argument('--load_model', type=str, default="./logs/go2_spring_jump/exported/policies/policy_1.pt",help='Run to load from.')
     parser.add_argument('--terrain', action='store_true', help='terrain or plane')
     args = parser.parse_args()
 
@@ -202,10 +202,10 @@ if __name__ == '__main__':
             kps = np.array([20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], dtype=np.double)
             kds = np.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], dtype=np.double)
             tau_limit = 45 * np.ones(12, dtype=np.double)
-            default_dof_pos = np.array( [0.1,0.8,-1.5,
-                -0.1,0.8,-1.5,
-                 0.1,1.0,-1.5,
-                -0.1,1. ,-1.5], dtype=np.double)
+            default_dof_pos = np.array( [0.,0.8,-1.5,
+                -0.,0.8,-1.5,
+                 0.,1.0,-1.5,
+                -0.,1. ,-1.5], dtype=np.double)
 
     policy = torch.jit.load(args.load_model)
     run_mujoco(policy, Sim2simCfg())

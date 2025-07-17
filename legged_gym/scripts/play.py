@@ -27,6 +27,7 @@ def play(args):
     # env_cfg.domain_rand.randomize_link_mass = False
     env_cfg.commands.resampling_time=10000000.0
     env_cfg.domain_rand.push_robots = False
+    env_cfg.domain_rand.push_towards_goal = False
 
     env_cfg.env.test = True
 

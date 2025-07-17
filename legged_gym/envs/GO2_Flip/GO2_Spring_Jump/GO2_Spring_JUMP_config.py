@@ -7,17 +7,19 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
         c_frame_stack = 3 #critic 网络的堆叠帧数
         num_single_obs = 47 #这个是传感器可以获得到的信息
         num_observations = int(frame_stack * num_single_obs) # 10帧正常的观测
-        single_num_privileged_obs = 68  #不平衡的观测，包含了特权信息，正常传感器获得不到的信息
+        single_num_privileged_obs = 69  #不平衡的观测，包含了特权信息，正常传感器获得不到的信息
         num_privileged_obs = int(c_frame_stack * single_num_privileged_obs) # 3帧特权观测
         num_actions = 12
         num_envs = 4096
-        episode_length_s = 4 # episode length in seconds
+        episode_length_s = 3 # episode length in seconds
         env_spacing = 3.  # not used with heightfields/trimeshes 
         joint_num = 12
         send_timeouts=True
 
-        reset_height = 0.13 # [m]
+        reset_height = 0.1 # [m]
         reset_landing_error = 0.2 # [in m]
+        reset_orientation_error=0.8 # [in rad]
+        test = False
 
 
     class terrain:
@@ -58,16 +60,16 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
             pos_variation_increment = [0.01,0.01,0.01]
 
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.4] # x,y,z [m]
+        pos = [0.0, 0.0, 0.32] # x,y,z [m]
         rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
         lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
         default_joint_angles = { # = target angles [rad] when action = 0.0
 
-            'FL_hip_joint': 0.1,   # [rad]
-            'RL_hip_joint': 0.1,   # [rad]
-            'FR_hip_joint': -0.1 ,  # [rad]
-            'RR_hip_joint': -0.1,   # [rad]
+            'FL_hip_joint': 0.,   # [rad]
+            'RL_hip_joint': 0.,   # [rad]
+            'FR_hip_joint': -0. ,  # [rad]
+            'RR_hip_joint': -0.,   # [rad]
 
             'FL_thigh_joint': 0.8,     # [rad]
             'RL_thigh_joint': 1.0,#1.,   # [rad]
@@ -86,15 +88,15 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
             'FR_hip_joint': -0. ,  # [rad]
             'RR_hip_joint': -0.,   # [rad]
 
-            'FL_thigh_joint': 1.25,     # [rad]
-            'RL_thigh_joint': 1.25,#1.,   # [rad]
-            'FR_thigh_joint': 1.25,     # [rad]
-            'RR_thigh_joint': 1.25,#1.,   # [rad]
+            'FL_thigh_joint': 0.9,     # [rad]
+            'RL_thigh_joint': 1.,#1.,   # [rad]
+            'FR_thigh_joint': 0.9,     # [rad]
+            'RR_thigh_joint': 1.,#1.,   # [rad]
 
-            'FL_calf_joint': -2.,   # [rad]
-            'RL_calf_joint': -2.,    # [rad]
-            'FR_calf_joint': -2.,  # [rad]
-            'RR_calf_joint': -2.,    # [rad]
+            'FL_calf_joint': -2.25,   # [rad]
+            'RL_calf_joint': -2.25,    # [rad]
+            'FR_calf_joint': -2.25,  # [rad]
+            'RR_calf_joint': -2.25,    # [rad]
         }
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
@@ -162,34 +164,37 @@ class GO2_Spring_JUMP_Cfg_Yu( LeggedRobotCfg ):
         add_cmd_action_latency = True
         randomize_cmd_action_latency = True
         range_cmd_action_latency = [1, 3]
-
+        push_towards_goal=True
     class rewards:
         class scales:
-            before_setting=0.6
-            # post_landing_pos=4.0
-            # post_landing_ori=4.0
-            line_z=6.
-            base_height_flight=4.0
-            base_height_stance=6.
-            orientation=0.4
-            default_pose_air=-0.2
-            ang_vel_xy=0.2
-
+            before_setting=5.0
+            # setting=5.0
+            line_z=12.
+            angle_y=2.
+            base_height_flight=10.0
+            base_height_stance=20.0
+            orientation=25.0
+            dof_pose_air=-0.2
+            dof_pos_stance=20.0
+            ang_vel_xy=-0.05
             torques=-0.0001
-            dof_pos_limits=-1.
-            dof_vel_limits=-1.
+            dof_pos_limits=-5.
+            dof_vel_limits=-5.
+            dof_vel=-0.001
             torque_limits=-1.
             termination=0.0
-            collision=-1.
-            action_rate=-0.01
-            action_rate_second_order=-0.0001
-            feet_contact_forces=-0.2
+            collision=-10.
+            action_rate=-0.005
+            feet_contact_forces=-0.1
+            symmetric_joints=-0.5
+            dof_hip_pos=-10.
 
-        max_contact_force=165
+        max_contact_force=150
         only_positive_rewards=False
         reward_sigma=0.25
         target_height=0.6
         cycle_time=1.0
+        soft_dof_pos_limit=0.9
     class normalization:
         class obs_scales:
             lin_vel = 2.0
@@ -267,7 +272,8 @@ class GO2_Spring_JUMP_PPO_Yu(LeggedRobotCfgPPO):
                            -5,6,-7,-8,9,-10,
                        -14,15,16,-11,12,13,-20,21,22,-17,18,19,
                        -26,27,28,-23,24,25,-32,33,34,-29,30,31,
-                       -38,39,40,-35,36,37,-44,45,46,-41,42,43]
+                       -38,39,40,-35,36,37,-44,45,46,-41,42,43
+                       ]
         ##command x y height
         act_permutation = [ -3, 4, 5, -0.0001, 1, 2, -9, 10, 11,-6, 7, 8,]#关节电机的对陈关系
         frame_stack = 10
@@ -279,7 +285,7 @@ class GO2_Spring_JUMP_PPO_Yu(LeggedRobotCfgPPO):
         max_iterations =50000 # number of policy updates
 
         # logging
-        save_interval = 100 # check for potential saves every this many iterations
+        save_interval = 250 # check for potential saves every this many iterations
         experiment_name = 'go2_spring_jump'
         run_name = ''
         # load and resume

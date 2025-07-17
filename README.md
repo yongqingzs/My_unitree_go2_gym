@@ -40,13 +40,22 @@ cd .. && pip install -e .
 ### 1. 训练
 
 运行以下命令进行训练：
+```bash
+python legged_gym/scripts/train.py --task=go2_trot --headless
+```
+
+```bash
+python legged_gym/scripts/train.py --task=go2_stairs --headless
+```
 
 ```bash
 python legged_gym/scripts/train.py --task=go2_jump --headless
 ```
+
 ```bash
 python legged_gym/scripts/train.py --task=go2_handstand --headless
 ```
+
 ```bash
 python legged_gym/scripts/train.py --task=go2_spring_jump --headless
 ```
@@ -79,11 +88,15 @@ python legged_gym/scripts/play.py --task=go2_trot
 ```
 
 ```bash
-python legged_gym/scripts/play.py --task=go2_jump
+python legged_gym/scripts/play.py --task=go2_spring_jump
 ```
 
 ```bash
 python legged_gym/scripts/play.py --task=go2_handstand
+```
+
+```bash
+python legged_gym/scripts/play.py --task=go2_stairs
 ```
 **说明**：
 
@@ -117,7 +130,8 @@ deploy_mujoco_48_handstand.py go2的handstand版本，没有base_line_vel，状�
 
 sim2sim_GO2.py 改自众擎开源项目的sim2sim，后续都会使用这个
 
-目前只有handstand jump trot是有效的，其他的还没有做完，我的想法是把其他的项目比方说BACKFLIP，难以阅读的代码整合到legged_gym框架，方便后来者进行学习
+目前只有handstand jump trot stairs是有效的，其他的还没有做完，我的想法是把其他的项目比方说BACKFLIP，难以阅读的代码整合到legged_gym框架，方便后来者进行学习
+staris单训练比较困难，可以使用trot预训练抬脚高度20cm，然后再训练，我trot训练10000轮，stairs 30000轮可以爬20cm台阶
 # 问题 与后续修改的计划
 
 如何调节抬脚高度（上下楼梯）

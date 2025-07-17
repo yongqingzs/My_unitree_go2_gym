@@ -43,7 +43,7 @@ class Go2_Spring_Jump(BaseTask):
         self._init_buffers()
         self._prepare_reward_function()
         self.reset()
-
+        self.prob=0
         self.init_done = True
 
     def step(self, actions):
@@ -119,9 +119,10 @@ class Go2_Spring_Jump(BaseTask):
         self.base_quat[:] = self.root_states[:, 3:7]
         self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
+        self.max_ang_vel_y=torch.maximum(self.max_ang_vel_y, self.base_ang_vel[:,2])
         self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
         self.base_euler_xyz = get_euler_xyz_tensor(self.base_quat)
-
+        # self.ori_error=torch.abs(self.base_euler_xyz[:,2]-)
         self.check_jump()
         self.check_termination()
         self.compute_reward()
@@ -133,7 +134,35 @@ class Go2_Spring_Jump(BaseTask):
         self.last_last_actions[:] = self.last_actions[:]
         self.last_actions[:] = self.actions[:]
         self.last_dof_vel[:] = self.dof_vel[:]
+        if self.cfg.env.test:
+            self._draw_debug_goal()
+        env_ids = self.not_pushed_up * ~self.has_jumped * (self.was_in_flight)
+        if self.cfg.domain_rand.push_towards_goal and torch.any(env_ids):
+            self._push_robots_upwards(env_ids)
+            self.not_pushed_up[env_ids] = False        
+        env_ids =~self.not_pushed_up*(self.was_in_flight)*self.not_pushed_rotot
+        if self.cfg.domain_rand.push_towards_goal and torch.any(env_ids):
+            self._push_robots_desired(env_ids)
+            self.not_pushed_rotot=False
+    def _push_robots_upwards(self,env_ids):
 
+        random_push = torch.randint(0,10,(self.num_envs,1),device=self.device).squeeze()
+        self.prob=max(8-int(self.count/(24*50)),0)
+        env_ids = torch.logical_and(random_push<self.prob,env_ids)
+
+        self.root_states[env_ids,9] += torch_rand_float(1.0, 1.5, (self.num_envs, 1), device=self.device).flatten()[env_ids]
+        self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.root_states))
+
+    def _push_robots_desired(self,env_ids):
+        """ Randomly pushes some robots towards the goal just before takeoff. Emulates an impulse by setting a randomized base velocity. 
+        """
+        
+        random_push = torch.randint(0,10,(self.num_envs,1),device=self.device).squeeze()
+        # self.prob=max(8-int(self.count/(24*200)),0)
+        env_ids = torch.logical_and(random_push<self.prob,env_ids)
+        self.root_states[env_ids,11] -= torch_rand_float(1.0,1.5, (self.num_envs, 1), device=self.device).flatten()[env_ids]
+        self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.root_states))  
+        # print("cnm~~~~~~~~~~~~~~~~~~~~~~~~")
     def check_jump(self):
         """ Check if the robot has jumped
         """
@@ -143,22 +172,20 @@ class Go2_Spring_Jump(BaseTask):
         self.contact_filt = contact_filt.clone() # Store it for the rewards that use it
         self.last_contacts=contact.clone()
         # Handle starting in mid-air (initialise in air):
-        settled_after_init = torch.logical_and(torch.all(contact_filt,dim=1), torch.sum(torch.abs(self.dof_pos-self.lie_joint_pos),dim=1)<0.8)#初始化完成，与默认关节角度的距离小于一个值就算初始化完成
-        self.setted_frames[settled_after_init] = self.episode_length_buf[settled_after_init]
-        self.init_state[settled_after_init]=self.root_states[settled_after_init].clone()
+        # settled_after_init = torch.logical_and(torch.all(contact_filt,dim=1), torch.sum(torch.abs(self.dof_pos-self.lie_joint_pos),dim=1)<1.5)#初始化完成，与默认关节角度的距离小于一个值就算初始化完成
+        settled_after_init = torch.logical_and(torch.all(contact_filt,dim=1), self.root_states[:,2]<0.25)#初始化完成，与默认关节角度的距离小于一个值就算初始化完成
         jump_filter = torch.all(~contact_filt, dim=1)
 
-        self.settled_after_init[settled_after_init] = True #初始化完成
+        self.settled_after_init[settled_after_init] = True#*(~self.has_jumped[settled_after_init]) #初始化完成
+        self.setted_frames=torch.where(self.settled_after_init,self.max_episode_length - self.episode_length_buf,  self.max_episode_length)
 
-        self.was_in_flight[torch.logical_and(jump_filter,self.settled_after_init)] = True # 已经在天上并且 从地上跳起（初始化过说明在地上过）
-
+        was_in_flight=torch.logical_and(jump_filter,self.settled_after_init)
+        self.was_in_flight[was_in_flight] = True#*(~self.has_jumped[was_in_flight]) # 已经在天上并且 从地上跳起（初始化过说明在地上过）
         has_jumped = torch.logical_and(torch.any(contact_filt,dim=1), self.was_in_flight) #飞起来过并且落地就是已经跳跃过了
         
-        # Record landing pose after first jump (before self.has_jumped is updated):
-        self.landing_poses[torch.logical_and(has_jumped,~self.has_jumped)] = self.root_states[torch.logical_and(has_jumped,~self.has_jumped),:7]
+        self.landing_poses[torch.logical_and(has_jumped,~self.has_jumped)] = self.root_states[torch.logical_and(has_jumped,~self.has_jumped),:2]
         # Only count the first time flight is achieved:
         self.has_jumped[has_jumped] = True 
-        self.jump_command[has_jumped] = 0.0 #已经跳过，不再跳
 
     def check_termination(self):
         """ Check if environments need to be reset
@@ -188,18 +215,20 @@ class Go2_Spring_Jump(BaseTask):
         self.was_in_flight[env_ids] = False
         self.has_jumped[env_ids] = False
         self.settled_after_init[env_ids] = False
-        self.landing_poses[env_ids,:] = 0
+        self.landing_poses[env_ids,:] = self.init_state[env_ids,:2]
         self.actions[env_ids] = 0.
         self.last_actions[env_ids] = 0.
         self.last_last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
+        self.max_ang_vel_y[env_ids]=0
         self.last_contacts[env_ids] = 0
-
-        self.commands[env_ids, 0] = torch_rand_float(0,0.2 ,(len(env_ids),1), device=self.device).squeeze(-1)
-        self.commands[env_ids, 1] = torch_rand_float(-0.02,0.02, (len(env_ids),1), device=self.device).squeeze(-1)
-        self.commands[env_ids, 2] = torch_rand_float(self.cfg.rewards.target_height-0.1,self.cfg.rewards.target_height+0.1, (len(env_ids),1), device=self.device).squeeze(-1)
-
+        self.not_pushed_up[env_ids] = True
+        self.not_pushed_rotot=True
+        self.commands[env_ids, 0] = 0
+        self.commands[env_ids, 1] = 0
+        self.commands[env_ids, 2] = torch_rand_float(self.cfg.rewards.target_height,self.cfg.rewards.target_height+0.1, (len(env_ids),1), device=self.device).squeeze(-1)
+        self.setted_frames=self.max_episode_length
         self._reset_latency_buffer(env_ids)
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
@@ -224,7 +253,7 @@ class Go2_Spring_Jump(BaseTask):
             self.obs_history[i][env_ids] *= 0
         for i in range(self.critic_history.maxlen):
             self.critic_history[i][env_ids] *= 0
-        self.jump_command[env_ids] = 1
+
     def compute_reward(self):
         """ Compute rewards
             Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
@@ -271,7 +300,6 @@ class Go2_Spring_Jump(BaseTask):
 
         self.privileged_obs_buf = torch.cat((
             self.command_input,  # 2 + 3 控制输入 ，相位，目标速度，角速度
-            # self.jump_command,
             (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,  # 12  当前关节位置与默认关节位置之差
             self.dof_pos * self.obs_scales.dof_pos,  # 12
             self.dof_vel * self.obs_scales.dof_vel,  # 速度乘以缩放因子 12
@@ -281,6 +309,7 @@ class Go2_Spring_Jump(BaseTask):
             self.base_euler_xyz *self.cfg.normalization.obs_scales.quat,  # 3
             stance_mask,  # 2
             contact_mask,  # 2    
+            self.has_jumped.unsqueeze(1),
             
         ), dim=-1)#5 12 12 12 12 3 3 3 1 1 2 2 =68
         # print("self.privileged_obs_buf",self.privileged_obs_buf.shape)
@@ -317,8 +346,6 @@ class Go2_Spring_Jump(BaseTask):
 
         self.obs_buf = obs_buf_all.reshape(self.num_envs, -1)  # N, T*K
         self.privileged_obs_buf = torch.cat([self.critic_history[i] for i in range(self.cfg.env.c_frame_stack)], dim=1)
-        # for i in range(self.cfg.env.c_frame_stack):
-        #     print(self.critic_history[i].shape)
 
     def create_sim(self):
         """ Creates simulation, terrain and evironments
@@ -388,13 +415,17 @@ class Go2_Spring_Jump(BaseTask):
             self.dof_vel_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
             for i in range(len(props)):
-                self.dof_pos_limits[i, 0] = props["lower"][i].item() 
-                self.dof_pos_limits[i, 1] = props["upper"][i].item() 
-                self.dof_vel_limits[i] = props["velocity"][i].item() 
-                self.torque_limits[i] = props["effort"][i].item() 
-        
+                self.dof_pos_limits[i, 0] = props["lower"][i].item()
+                self.dof_pos_limits[i, 1] = props["upper"][i].item()
+                self.dof_vel_limits[i] = props["velocity"][i].item()
+                self.torque_limits[i] = props["effort"][i].item()
+                # soft limits
+                m = (self.dof_pos_limits[i, 0] + self.dof_pos_limits[i, 1]) / 2
+                r = self.dof_pos_limits[i, 1] - self.dof_pos_limits[i, 0]
+                self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
+                self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
 
-         # randomization of the motor zero calibration for real machine
+                 # randomization of the motor zero calibration for real machine
         if self.cfg.domain_rand.randomize_motor_zero_offset:
             self.motor_zero_offsets[env_id, :] = torch_rand_float(self.cfg.domain_rand.motor_zero_offset_range[0], self.cfg.domain_rand.motor_zero_offset_range[1], (1,self.num_actions), device=self.device)
         
@@ -403,6 +434,7 @@ class Go2_Spring_Jump(BaseTask):
             self.p_gains_multiplier[env_id, :] = torch_rand_float(self.cfg.domain_rand.stiffness_multiplier_range[0], self.cfg.domain_rand.stiffness_multiplier_range[1], (1,self.num_actions), device=self.device)
             self.d_gains_multiplier[env_id, :] =  torch_rand_float(self.cfg.domain_rand.damping_multiplier_range[0], self.cfg.domain_rand.damping_multiplier_range[1], (1,self.num_actions), device=self.device)   
         
+        return props
 
         return props
     def _process_rigid_body_props(self, props, env_id):
@@ -621,14 +653,16 @@ class Go2_Spring_Jump(BaseTask):
         self.settled_after_init = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
         self.setted_frames= torch.zeros(self.num_envs, dtype=torch.long, device=self.device, requires_grad=False)
         self.ori_error = torch.zeros(self.num_envs,dtype=torch.float, device=self.device, requires_grad=False)
-
-        self.landing_poses = torch.zeros(self.num_envs, 7, dtype=torch.float, device=self.device, requires_grad=False)
-
+        self.reset_idx_landing_error= torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        self.landing_poses = torch.zeros(self.num_envs, 2, dtype=torch.float, device=self.device, requires_grad=False)
+        self.count=torch.zeros(1, dtype=torch.float, device=self.device, requires_grad=False)
         self.success_rate = -torch.ones(self.num_envs, 2, dtype=torch.float, device=self.device, requires_grad=False)
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
+        self.max_ang_vel_y=torch.zeros(self.num_envs,dtype=torch.float, device=self.device, requires_grad=False)
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
-
+        self.not_pushed_up = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
+        self.not_pushed_rotot = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
 
         self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
         self.lie_joint_pos= torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
@@ -865,67 +899,92 @@ class Go2_Spring_Jump(BaseTask):
         self.max_episode_length_s = self.cfg.env.episode_length_s
         self.max_episode_length = np.ceil(self.max_episode_length_s / self.dt)
 
+    def _draw_debug_goal(self):
+        """ Draws desired goal points for debugging.
+            Default behaviour: draws goal position
+        """
+        
+        self.gym.clear_lines(self.viewer)
+        sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 1, 0))
+        sphere_geom_start = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(0, 1, 0))
 
+        for i in range(self.num_envs):
+            goal_pos = (self.init_state[i, :3] + self.commands[i,0:3]).cpu().numpy()
+            goal_pos[2] = 0
+            # goal_pos = self.env_origins[i].clone()
+            # Plot the xy position as a sphere on the ground plane
+            sphere_pose = gymapi.Transform(gymapi.Vec3(goal_pos[0], goal_pos[1], goal_pos[2]), r=None)
+            gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose) 
+
+            sphere_pose_start = gymapi.Transform(gymapi.Vec3(self.init_state[i, 0], self.init_state[i, 1], 0.0), r=None)
+            gymutil.draw_lines(sphere_geom_start, self.gym, self.viewer, self.envs[i], sphere_pose_start)
     #------------ reward functions----------------
     def _reward_before_setting(self):
         #切换到蹲姿状态之前的奖励函数
-        rew = torch.exp(-torch.sum(torch.abs(self.dof_pos-self.lie_joint_pos),dim=1))*~self.settled_after_init #\
+        rew = torch.exp(-torch.sum(torch.abs(self.dof_pos-self.default_dof_pos),dim=1))*(~self.settled_after_init)
         return rew
-
-    def _reward_post_landing_pos(self):
-        #着陆位置误差
-        rew= torch.exp(-torch.linalg.norm(self.commands[:,:2] - (self.landing_poses[:,:2]-self.init_state[:,:2]),dim=1)*10)*self.has_jumped
+    def _reward_setting(self):
+        #切换到蹲姿状态之前的奖励函数
+        rew = torch.clip(150-self.setted_frames,min=0)/16
         return rew
-    
-    def _reward_post_landing_ori(self):
-
-        quat_landed = get_euler_xyz_tensor(self.root_states[:, 3:7])[:,2]
-        quat_des = torch.atan2(self.commands[:, 1],self.commands[:, 0])
-        # print(quat_des[0],quat_landed[0])
-        ori_tracking_error = torch.abs(quat_des - quat_landed)
-        rew= torch.exp(-torch.square(ori_tracking_error)*10)*self.has_jumped
-
-        return rew
-     
     def _reward_line_z(self):
         #在初始化后和落地之前z轴线速度越大越好
-        rew=(self.root_states[:, 9]>0)*self.root_states[:, 9] *self.settled_after_init*(~self.has_jumped)
-        # print(rew[0])
+        rew=(self.root_states[:, 9]>0)*self.root_states[:, 9] *(self.settled_after_init*~self.was_in_flight)
+        rew+=(self.root_states[:, 9]>0)*self.root_states[:, 9] *(self.was_in_flight*~self.has_jumped)
         return rew
-    
+    def _reward_angle_y(self):
+        #在初始化后和落地之前z轴线速度越大越好
+        rew=(self.base_ang_vel[:, 1]<0)*(-self.base_ang_vel[:, 1]) *(self.settled_after_init*~self.was_in_flight)
+        rew+=3*(self.base_ang_vel[:, 1]<0)*(-self.base_ang_vel[:, 1]) *(self.was_in_flight*~self.has_jumped)
+        # print(self.base_ang_vel[:, 1])
+        # print(rew[0])
+        rew = torch.clip(rew,max=20.)
+        return rew
 
     def _reward_base_height_flight(self):
         #跳跃的高度奖励
         base_height_flight = (self.root_states[:, 2] - self.commands[:, 2])
         # print(self.root_states[0,:3])
-        rew= torch.exp(-torch.abs(base_height_flight)*10)*self.was_in_flight*(~self.has_jumped)
-
+        rew= torch.exp(-torch.abs(base_height_flight)*5)*self.was_in_flight
         return rew 
     
+    def _reward_dof_pose_air(self):
+        #在空中的默认关节奖励
+        angle_diff = torch.square(self.dof_pos - self.lie_joint_pos).sum(dim=1)*self.was_in_flight
+        return angle_diff
+    def _reward_dof_hip_pos(self):
+        #在空中的默认关节奖励
+        angle_diff = torch.square(self.dof_pos - self.lie_joint_pos)
+        return angle_diff[:,0]+angle_diff[:,3]+angle_diff[:,6]+angle_diff[:,9]
     def _reward_base_height_stance(self):
         #落地后的高度奖励和默认关节角度的奖励
-        rew = torch.exp(-torch.sum(torch.abs(self.dof_pos-self.default_dof_pos),dim=1))*self.has_jumped
+        base_height_flight = (self.root_states[:, 2] - 0.32)
+        # print(self.root_states[0,:3])
+        rew= torch.exp(-torch.abs(base_height_flight)*10)*self.has_jumped*(self.max_ang_vel_y>7)
         return rew 
     
-    def _reward_orientation(self):
-
-        return torch.exp(-torch.norm(self.projected_gravity[:, :2], dim=1)*10)
-
-
-    def _reward_default_pose_air(self):
-        #在空中的默认关节奖励
-        angle_diff = torch.square(self.dof_pos - self.default_dof_pos).sum(dim=1)*self.was_in_flight
-        return angle_diff
-
-    def _reward_ang_vel_xy(self):
-        rew=torch.exp(-torch.norm(torch.abs(self.base_ang_vel[:, :2]), dim=1)*2)
-        return rew
+    def _reward_dof_pos_stance(self):
+        #落地后的高度奖励和默认关节角度的奖励
+        rew = torch.exp(-torch.abs(self.dof_pos - self.default_dof_pos).sum(dim=1))*self.has_jumped*(self.max_ang_vel_y>7)
+        return rew 
     
 
-    # def _reward_success(self):
-    #     rew=self.has_jumped
-    #     return rew
+    def _reward_orientation(self):
+        return torch.exp(-torch.abs(self.base_euler_xyz).sum(dim=1))*self.has_jumped*(self.max_ang_vel_y>7)
 
+    def _reward_ang_vel_xy(self):
+        rew=torch.norm(self.base_ang_vel[:, ::2],dim=1)
+        return rew
+
+    def _reward_symmetric_joints(self):
+        # Reward the joint angles to be symmetric on each side of the body:
+        dof = self.dof_pos.clone().view(self.num_envs, 4, int(self.num_dof/4))
+        # # Multiply the right side hips by -1 to match the sign of the left side:
+        dof[:,1,0] *= -1
+        dof[:,3,0] *= -1
+        
+        err = torch.sum(torch.abs(dof[:,0,:] - dof[:,1,:]),axis=1) + torch.sum(torch.abs(dof[:,2,:] - dof[:,3,:]),axis=1)
+        return err
 
     def _reward_torques(self):
         # Penalize torques
@@ -934,9 +993,6 @@ class Go2_Spring_Jump(BaseTask):
     def _reward_action_rate(self):
         return torch.sum(torch.square(self.actions - self.last_actions), dim=1)
     
-    def _reward_action_rate_second_order(self):
-        return torch.sum(torch.square(self.actions - 2*self.last_actions + self.last_last_actions), dim=1)
-
     def _reward_collision(self):
         return torch.sum(1.*(torch.linalg.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1), dim=1)
     
@@ -962,3 +1018,7 @@ class Go2_Spring_Jump(BaseTask):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
 
+    def _reward_dof_vel(self):
+        # Penalize dof velocities
+        self.count+=1
+        return torch.sum(torch.square(self.dof_vel), dim=1)*self.was_in_flight

@@ -893,9 +893,9 @@ class GO2_Trot_Robot(BaseTask):
         # feet height should larger than target feet height at the peak
         target_height=(torch.abs(torch.sin(2*torch.pi*phase))*self.cfg.rewards.target_foot_height).unsqueeze(1).repeat(1,2)
         # print(left_feet_height.shape,right_feet_height.shape,target_height.shape)
-        rew=torch.exp(-torch.sum(torch.abs(left_feet_height-target_height)*swing_mask[:,0].unsqueeze(1).repeat(1,2),dim=1)*50)
+        rew=torch.exp(-torch.sum(torch.abs(left_feet_height-target_height)*swing_mask[:,0].unsqueeze(1).repeat(1,2),dim=1)*10)
         # print(rew[0],torch.sum(torch.abs(left_feet_height-target_height),dim=1)[0])
-        rew+=torch.exp(-torch.sum(torch.abs(right_feet_height-target_height)*swing_mask[:,1].unsqueeze(1).repeat(1,2),dim=1)*50)
+        rew+=torch.exp(-torch.sum(torch.abs(right_feet_height-target_height)*swing_mask[:,1].unsqueeze(1).repeat(1,2),dim=1)*10)
         return rew*(torch.norm(self.commands[:, :2], dim=1) > 0.2)
     
     def _reward_lin_vel_z(self):
@@ -955,7 +955,7 @@ class GO2_Trot_Robot(BaseTask):
 
     def _reward_stand_still(self):
         # Penalize motion at zero commands
-        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1)*(torch.norm(self.commands[:, :3], dim=1) < 0.1)
+        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1)*(torch.norm(self.commands[:, :2], dim=1) < 0.1)
 
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
