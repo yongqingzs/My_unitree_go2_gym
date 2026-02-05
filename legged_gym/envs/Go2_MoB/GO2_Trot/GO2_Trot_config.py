@@ -40,7 +40,7 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
         slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
     class commands:
         curriculum = True
-        max_curriculum = 2.0
+        max_curriculum = 3.0
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 5. # time before command are changed[s]
         heading_command = False # if true: compute ang vel command from heading error
@@ -82,8 +82,9 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 4
     class asset:
-        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/go2/urdf/go2.urdf'
-        name = "go2"
+        # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/go2/urdf/go2.urdf'
+        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/go1/urdf/go1.urdf'
+        name = "go1"
         foot_name = "foot"
         penalize_contacts_on = ["thigh", "calf"]
         terminate_after_contacts_on = ["base"]
@@ -263,7 +264,8 @@ class GO2_Trot_PPO_Yu(LeggedRobotCfgPPO):
 
         # logging
         save_interval = 100 # check for potential saves every this many iterations
-        experiment_name = 'go2_trot_2'
+        # experiment_name = 'go2_trot_2'
+        experiment_name = 'go1_trot_3'
         run_name = ''
         # load and resume
         resume = False

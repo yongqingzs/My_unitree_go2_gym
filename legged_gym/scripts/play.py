@@ -1,7 +1,7 @@
-import sys
-from legged_gym import LEGGED_GYM_ROOT_DIR
 import os
 import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+from legged_gym import LEGGED_GYM_ROOT_DIR
 from legged_gym import LEGGED_GYM_ROOT_DIR
 
 import isaacgym
