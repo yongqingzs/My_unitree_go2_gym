@@ -156,7 +156,7 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
             stand_still = -1.
             base_height=-5.
             trot=0.8
-            feet_clearance=0.1 #feet clearance can increase for more
+            feet_clearance=0.05 #feet clearance can increase for more
             default_hip_pos=-0.2
             default_pos=-0.1
             contact_without_command=1.
@@ -168,7 +168,7 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
         soft_torque_limit = 1.
         base_height_target = 0.29
         max_contact_force = 100. # forces above this value are penalized
-        cycle_time=0.5
+        cycle_time=0.333
         target_foot_height=0.06  #feet height
     class normalization:
         class obs_scales:

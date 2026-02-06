@@ -1,6 +1,8 @@
 ## NOTE
 ```bash
 conda activate go1_gym
+
+python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/export_alone.py --checkpoint XX
 ```
 
 ## base
@@ -159,6 +161,8 @@ python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --t
 ```txt
 only origin
 max_command = 3
+
+NOTE: 实机还行，机身高度略有下降
 ```
 ```bash
 python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --task go2_trot --max_iterations 20000 --seed 1 --num_envs 4096 --run_name base1
@@ -172,7 +176,62 @@ but:
     tracking_ang_vel = 1.
     feet_clearance=0.01
     contact_without_command=0.3
+
+NOTE: 不如 0204
 ```
 ```bash
 python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --task go2_trot --max_iterations 20000 --seed 1 --num_envs 4096 --run_name base2
+```
+
+- 0205
+```txt
+only origin
+max_command = 3
+but:
+    cycle_time=0.333
+NOTE: 有效
+```
+```bash
+python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --task go2_trot --max_iterations 20000 --seed 1 --num_envs 4096 --run_name base3
+```
+
+- 0205-1
+```txt
+only origin
+max_command = 3
+but:
+    cycle_time=0.333
+    feet_clearance=0.05
+NOTE: 有效，表现比 0205 好
+```
+```bash
+python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --task go2_trot --max_iterations 20000 --seed 1 --num_envs 4096 --run_name base5
+```
+
+- 0206
+```txt
+only origin
+max_command = 3
+but:
+    cycle_time=0.333
+    feet_clearance=0.05
+    stand_still = -0.5
+    feet_clearance=0.03
+
+NOTE: 静止时表现更差
+```
+```bash
+python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --task go2_trot --max_iterations 20000 --seed 1 --num_envs 4096 --run_name base6
+```
+
+- 0206-1
+```txt
+only origin
+max_command = 3
+but:
+    cycle_time=0.333
+    feet_clearance=0.03
+```
+```bash
+python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --task go2_trot --max_iterations 20000 --seed 1 --num_envs 4096 --run_name base7
 ```
