@@ -231,7 +231,59 @@ max_command = 3
 but:
     cycle_time=0.333
     feet_clearance=0.03
+
+NOTE: 待实机测试
 ```
 ```bash
 python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --task go2_trot --max_iterations 20000 --seed 1 --num_envs 4096 --run_name base7
+```
+
+- 0207
+```txt
+only origin
+max_command = 3
+but:
+    cycle_time=0.333
+    feet_clearance=0.03
+    frame_stack = 5 #action stack
+
+NOTE: 启动更慢
+```
+```bash
+CUDA_VISIBLE_DEVICES=1 python3 /workspace/My_unitree_go2_gym/legged_gym/scripts/train.py --headless --task go2_trot --max_iterations 20000 --seed 1 --num_envs 4096 --run_name base8
+```
+
+- 0208
+```txt
+only origin
+max_command = 3
+but:
+    cycle_time=0.5
+    feet_clearance=0.05
+base9
+
+NOTE: 待实机测试
+```
+
+- 0208-1
+```txt
+only origin
+max_command = 3
+but:
+    cycle_time=0.5
+    feet_clearance=0.03
+base10
+
+NOTE: 待实机测试
+```
+
+- 0210
+```txt
+only origin
+max_command = 3
+VelActorCritic
+but:
+    cycle_time=0.5
+    feet_clearance=0.03
+base11
 ```

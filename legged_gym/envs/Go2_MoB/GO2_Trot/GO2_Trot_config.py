@@ -156,7 +156,7 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
             stand_still = -1.
             base_height=-5.
             trot=0.8
-            feet_clearance=0.05 #feet clearance can increase for more
+            feet_clearance=0.03 #feet clearance can increase for more
             default_hip_pos=-0.2
             default_pos=-0.1
             contact_without_command=1.
@@ -168,7 +168,7 @@ class GO2_Trot_Cfg_Yu( LeggedRobotCfg ):
         soft_torque_limit = 1.
         base_height_target = 0.29
         max_contact_force = 100. # forces above this value are penalized
-        cycle_time=0.333
+        cycle_time=0.5
         target_foot_height=0.06  #feet height
     class normalization:
         class obs_scales:
@@ -227,6 +227,7 @@ class GO2_Trot_PPO_Yu(LeggedRobotCfgPPO):
         actor_hidden_dims = [512, 256, 128]
         critic_hidden_dims = [512, 256, 128]
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
+        frame_stack = 10  # 用于 VelActorCritic 推断 num_one_step_obs
         # only for 'ActorCriticRecurrent':
         # rnn_type = 'lstm'
         # rnn_hidden_size = 512

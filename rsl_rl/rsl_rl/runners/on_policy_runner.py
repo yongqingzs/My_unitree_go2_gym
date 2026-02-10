@@ -36,8 +36,8 @@ import statistics
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from rsl_rl.algorithms import PPO
-from rsl_rl.modules import ActorCritic, ActorCriticRecurrent
+from rsl_rl.algorithms import PPO, VelPPO
+from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, VelActorCritic
 from rsl_rl.env import VecEnv
 
 
@@ -108,7 +108,11 @@ class OnPolicyRunner:
                     obs, privileged_obs, rewards, dones, infos = self.env.step(actions)
                     critic_obs = privileged_obs if privileged_obs is not None else obs
                     obs, critic_obs, rewards, dones = obs.to(self.device), critic_obs.to(self.device), rewards.to(self.device), dones.to(self.device)
-                    self.alg.process_env_step(rewards, dones, infos)
+                    # Pass next_critic_obs if the algorithm needs it (for velocity estimator)
+                    if hasattr(self.alg, 'process_env_step') and 'next_critic_obs' in self.alg.process_env_step.__code__.co_varnames:
+                        self.alg.process_env_step(rewards, dones, infos, critic_obs)
+                    else:
+                        self.alg.process_env_step(rewards, dones, infos)
                     
                     if self.log_dir is not None:
                         # Book keeping
