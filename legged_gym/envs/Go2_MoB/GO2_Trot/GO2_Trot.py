@@ -902,6 +902,9 @@ class GO2_Trot_Robot(BaseTask):
         rew=torch.exp(-torch.sum(torch.abs(left_feet_height-target_height)*swing_mask[:,0].unsqueeze(1).repeat(1,2),dim=1)*10)
         # print(rew[0],torch.sum(torch.abs(left_feet_height-target_height),dim=1)[0])
         rew+=torch.exp(-torch.sum(torch.abs(right_feet_height-target_height)*swing_mask[:,1].unsqueeze(1).repeat(1,2),dim=1)*10)
+        # 如果向后退(后退速度 > 0.1), 奖励乘以2
+        # backward_mask = (self.commands[:, 0] < -0.1)
+        # rew = torch.where(backward_mask, rew * 2, rew)
         return rew*(torch.norm(self.commands[:, :3], dim=1) > 0.1)
     
     #------------ reward functions----------------

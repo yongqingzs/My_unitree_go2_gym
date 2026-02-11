@@ -262,7 +262,7 @@ but:
     feet_clearance=0.05
 base9
 
-NOTE: 待实机测试
+NOTE: 实机尚可，前进不如 0208-1，后退比 0208-1 好
 ```
 
 - 0208-1
@@ -274,7 +274,7 @@ but:
     feet_clearance=0.03
 base10
 
-NOTE: 待实机测试
+NOTE: 实机尚可
 ```
 
 - 0210
@@ -285,5 +285,24 @@ VelActorCritic
 but:
     cycle_time=0.5
     feet_clearance=0.03
+    backward_mask
 base11
+
+NOTE: 待实机测试
+```
+
+- 0211
+```txt
+only origin
+max_command = 3
+VelActorCritic
+but:
+    cycle_time=0.5
+    feet_clearance=0.03
+    push_interval_s = 16
+    max_push_vel_xy = 1
+    added_base_com_range = [-0.05, 0.05]
+base12
+
+NOTE: 存在随机性抖振现象
 ```
